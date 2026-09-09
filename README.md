@@ -34,20 +34,63 @@ wins by 3-5x. This crossover is the whole reason a router is useful at
 all — a static "always use the GPU" policy would be actively slower for
 small ops here.
 
-## Phase 2 (planned, not started)
+## Phase 2 (done): remote CUDA GPU as a third backend
 
-- **Remote GPU backend**: add a RunPod worker as a third routing target
-  (real CUDA GPU, over the network — introduces a latency-vs-throughput
-  tradeoff the local-only version doesn't have).
+`benchmarks/bench_cuda.py` runs the identical benchmark on a rented
+RunPod GPU (RTX 3090, spun up, benchmarked, and torn down immediately
+after — no idle billing). Real numbers, copied back to
+`benchmarks/results_cuda.json`:
+
+| Size class | CUDA (RTX 3090, ms) |
+|---|---|
+| tiny | 0.043 |
+| small | 0.048 |
+| medium | 0.045 |
+| large | 0.085 |
+| xlarge | 0.264 |
+| xxlarge | 0.457 |
+| huge | 1.464 |
+
+Raw CUDA compute crushes both local backends at every size — but that
+number alone is misleading for a *remote* GPU, since a real call pays a
+network round-trip on top. `router.route()` refuses to compare raw remote
+compute time against local wall-clock time: the `cuda` backend is
+**excluded from routing unless you pass a real measured
+`network_overhead_ms`.**
+
+With a realistic ~30ms round-trip added, the picture flips entirely:
+
+```
+huge, no overhead given  -> mps  (7.7ms)   [cuda excluded, no honest comparison possible]
+huge, +30ms RTT          -> mps  (7.7ms  vs cuda's 31.5ms)
+tiny, +30ms RTT          -> cpu  (0.005ms vs cuda's 30ms)
+```
+
+**The actual finding**: local MPS beats remote CUDA-over-network at
+*every* size tested here, even "huge." A single matmul is never worth
+a remote dispatch — the network hop dominates regardless of how much
+faster the remote compute is. This is the real reason systems like
+Gimlet route whole workload *segments* to remote hardware, not
+individual ops: amortizing one network round-trip across many ops is
+the only way remote GPU dispatch pays for itself. This router
+intentionally won't let you pretend otherwise with a fabricated
+overhead number.
+
+## Phase 3 (not started)
+
 - **Jetson Orin Nano backend**: third architecture (ARM + CUDA), currently
   unreachable on the network — add once it's back online.
 - **kforge-style kernel angle**: take one op, auto-tune/compile a lower-level
   kernel for it, and benchmark against stock PyTorch — smaller, separate
   experiment from the routing piece above.
+- **Batched remote dispatch**: route a whole *sequence* of ops to the
+  remote GPU per round-trip instead of one op at a time, and measure
+  whether that's actually where remote wins.
 
 ## Running it
 
 ```bash
-python3 benchmarks/bench_local.py   # regenerate results_local.json on your own hardware
-python3 router/router.py 128 4096 4096
+python3 benchmarks/bench_local.py                 # regenerate results_local.json on your own hardware
+python3 router/router.py 128 4096 4096             # local-only routing
+python3 router/router.py 128 4096 4096 30          # include remote CUDA w/ 30ms measured RTT
 ```
