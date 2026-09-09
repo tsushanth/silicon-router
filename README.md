@@ -76,16 +76,57 @@ the only way remote GPU dispatch pays for itself. This router
 intentionally won't let you pretend otherwise with a fabricated
 overhead number.
 
-## Phase 3 (not started)
+## Phase 3 (done): kforge-style kernel autotuning — a negative result
+
+`benchmarks/bench_kforge.py` compares PyTorch eager mode against
+`torch.compile(mode="max-autotune")` on the same matmul shapes — real
+automated kernel generation (Triton), not a hand-written custom kernel,
+same spirit as Gimlet's kforge on a much smaller scale.
+
+**CPU (M2 Pro)** — compiled is slower at every size:
+
+| Size class | eager (ms) | compiled (ms) | speedup |
+|---|---|---|---|
+| tiny | 0.004 | 0.020 | 0.22x |
+| small | 0.012 | 0.108 | 0.11x |
+| medium | 0.065 | 0.177 | 0.37x |
+| large | 0.532 | 0.638 | 0.84x |
+| xlarge | 5.396 | 5.508 | 0.98x |
+
+**CUDA (RTX 3090)** — same result, and it gets worse with scale. Inductor's
+autotune search genuinely ran (real `AUTOTUNE mm(...)` logs, 18 Triton
+kernel configs benchmarked, best one selected), so this isn't a
+misconfiguration — it's real generated kernels losing to cuBLAS:
+
+| Size class | eager (ms) | compiled (ms) | speedup |
+|---|---|---|---|
+| tiny | 0.038 | 0.104 | 0.36x |
+| small | 0.046 | 0.126 | 0.36x |
+| medium | 0.044 | 0.178 | 0.25x |
+| large | 0.081 | 0.632 | 0.13x |
+| xlarge | 0.261 | 3.578 | **0.07x (14x slower)** |
+
+**Honest takeaway**: for plain matmul, cuBLAS/MKL's hand-tuned kernels are
+extremely hard to beat, and torch.compile's autotuning overhead only gets
+more expensive relative to the op as size grows. This isn't evidence that
+kforge-style kernel generation doesn't work in general — it's evidence
+that a single plain matmul is the wrong workload to test it on. Real
+kernel-fusion wins (which is what tools like kforge actually target) show
+up on *sequences* of ops — fusing an activation, a bias-add, and a matmul
+into one kernel avoids the intermediate memory round-trips that eager
+mode pays for each op separately. A single isolated matmul has nothing
+to fuse. That's the natural next experiment, not attempted here.
+
+## Phase 4 (not started)
 
 - **Jetson Orin Nano backend**: third architecture (ARM + CUDA), currently
   unreachable on the network — add once it's back online.
-- **kforge-style kernel angle**: take one op, auto-tune/compile a lower-level
-  kernel for it, and benchmark against stock PyTorch — smaller, separate
-  experiment from the routing piece above.
 - **Batched remote dispatch**: route a whole *sequence* of ops to the
   remote GPU per round-trip instead of one op at a time, and measure
   whether that's actually where remote wins.
+- **Fused-op kernel benchmark**: retry the kforge experiment on a small
+  chain of ops (e.g. matmul → bias-add → GELU) instead of one matmul,
+  where kernel fusion actually has something to do.
 
 ## Running it
 
