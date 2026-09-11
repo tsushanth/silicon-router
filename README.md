@@ -4,8 +4,13 @@ A small, honest proof-of-concept exploring the idea behind [Gimlet Labs](https:/
 routing pieces of an AI workload to whichever chip actually runs them fastest,
 instead of pinning everything to one device.
 
-This is a learning/exploration project, not a product. Every number in this
-repo is measured on real hardware, not simulated.
+This is a learning/exploration project, not a product — being open
+sourced (Apache-2.0) because the findings are more useful public than
+private, not for any commercial angle. Every number in this repo is
+measured on real hardware, not simulated. See [ROADMAP.md](ROADMAP.md)
+for what's actually being worked toward next, and
+[CONTRIBUTING.md](CONTRIBUTING.md) if you want to add a backend or a
+workload.
 
 ## Phase 1 (done): local CPU vs MPS routing
 
