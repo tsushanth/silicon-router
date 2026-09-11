@@ -117,10 +117,22 @@ into one kernel avoids the intermediate memory round-trips that eager
 mode pays for each op separately. A single isolated matmul has nothing
 to fuse. That's the natural next experiment, not attempted here.
 
-## Phase 4 (not started)
+## Phase 4 (deferred, not blocking)
 
-- **Jetson Orin Nano backend**: third architecture (ARM + CUDA), currently
-  unreachable on the network — add once it's back online.
+- **Jetson Orin Nano backend**: the genuinely interesting fourth silicon
+  type here — ARM CPU + Tegra iGPU with unified memory, architecturally
+  distinct from everything benchmarked above (unlike another RunPod/Vast
+  box, which would just be a different GPU tier on the same x86+discrete-
+  GPU architecture already covered in Phase 2). Deferred rather than
+  swapped for a same-architecture provider, because that would dilute
+  the actual multi-*silicon* claim this repo is making. Two real,
+  external blockers, neither fixable from code: the pod is WiFi-only
+  with no VPN/Tailscale set up, so it's only reachable when a laptop is
+  on the same LAN; and even when reachable, no NVIDIA Tegra-CUDA wheel
+  is published yet for its JetPack R39 / CUDA 13.2 build, so the Orin
+  GPU can't be exercised regardless of connectivity. Revisit once
+  Tailscale is installed on the device and/or NVIDIA ships a matching
+  wheel.
 - **Batched remote dispatch**: route a whole *sequence* of ops to the
   remote GPU per round-trip instead of one op at a time, and measure
   whether that's actually where remote wins.
