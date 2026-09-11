@@ -23,18 +23,32 @@ this sits in ML-infra territory where a patent grant is the ecosystem
 norm (vLLM, Ray, etc.), not because of any concrete dispute — it's the
 standard choice for this category of tool.
 
-## Milestone 1: Real workloads, not synthetic matmuls
+## Milestone 1: Real workloads, not synthetic matmuls — DONE
 
-**Problem**: every result so far is one isolated matmul. That's enough
+**Problem**: every result so far was one isolated matmul. That's enough
 to find a genuine crossover point, but it's not representative of what
 an actual AI workload looks like, and nobody should trust routing
 decisions built only on it.
 
-**Done when**: the router makes decisions for an actual small model's
-forward pass (e.g. a distilled LLM's prefill vs. decode stages, or a
-multi-stage speech pipeline), not just a single op — with the same
-measure-first discipline as Phase 1-3 (no simulated numbers, no
-retrofitted narrative).
+**Done** (see Phase 7 in the README): routed a real
+`nn.TransformerEncoderLayer` forward pass (Transformer-base config, the
+same building block real models stack) instead of a matmul. Local
+CPU/MPS found a real, qualitatively-similar crossover to Phase 1's
+(small sequences favor CPU, MPS pulls ahead up to 3.6x by seq_len=1024).
+Remote lost at every size tested, by 20-600x — extending Phase 2's
+single-op finding to a real model: the network round-trip dominates a
+single small model layer's actual compute just as badly as it dominated
+a single matmul. `router/model_dispatch_router.py`'s
+`ModelDispatchRouter` correctly routed local at every tested size in a
+live integration test against a real rented GPU.
+
+**Still open, deliberately not attempted here**: this is one
+transformer *layer*, not a full model with a real prefill/decode split
+(a real LLM's actual routing-relevant structure). A real prefill-vs-
+decode experiment — where the two stages have genuinely different
+compute/memory profiles, unlike one repeated layer — is the honest next
+step if this milestone gets revisited, not something this phase claims
+to have already covered.
 
 ## Milestone 2: Answer the batching/segment-routing question — DONE
 

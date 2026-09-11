@@ -204,6 +204,66 @@ has to trust last week's number for today's hardware.
 Pod created, integration-tested, and deleted within minutes — confirmed
 via `list-pods`.
 
+## Phase 7 (done): a real model forward pass, not a matmul (Milestone 1)
+
+Every phase above routes one isolated matmul. This one routes a real
+transformer encoder block — `models/tiny_transformer.py` wraps PyTorch's
+own `nn.TransformerEncoderLayer` at the original "Transformer base"
+config (Vaswani et al. 2017: d_model=512, 8 heads, dim_feedforward=2048)
+— a real multi-op forward pass (self-attention + MLP + layernorms +
+residuals), not a stand-in shape.
+
+**Local (M2 Pro), batch=4, properly warmed up (`bench_model_local.py`):**
+
+| seq_len | CPU (ms) | MPS (ms) | Winner |
+|---|---|---|---|
+| 16 | 1.15 | 1.21 | CPU (close) |
+| 64 | 2.29 | 1.93 | MPS |
+| 256 | 7.05 | 2.83 | **MPS (2.5x)** |
+| 1024 | 47.38 | 13.30 | **MPS (3.6x)** |
+
+A real crossover again, this time on an actual model layer instead of a
+raw matmul — small sequences favor CPU, MPS pulls ahead and widens as
+sequence length grows, the same qualitative shape as Phase 1 but on
+different, more realistic ops.
+
+**Remote (RTX 3090, live public internet), same workload
+(`bench_model_remote.py`):**
+
+| seq_len | Remote wall (ms) |
+|---|---|
+| 16 | 817.2 |
+| 64 | 925.0 |
+| 256 | 442.3 |
+| 1024 | 444.6 |
+
+**Local wins at every size, by 20-600x.** Unlike the big-matmul batching
+experiment (Phase 5), this single model layer's actual compute is tiny
+(tens of milliseconds even at seq_len=1024) next to the network
+round-trip (Phase 5 measured ~280-570ms of pure network overhead on
+this same kind of connection) — so network noise dominates completely
+and doesn't even resolve a clean seq_len trend. This extends Phase 2's
+finding (a single op never justifies remote dispatch) to a real model:
+**a single real-model forward pass doesn't either, for the same
+reason** — and Phase 5/6 already showed what changes that: batching
+many such calls into one remote round-trip, not sending them one at a
+time.
+
+`router/model_dispatch_router.py`'s `ModelDispatchRouter` — same
+calibrate/route/dispatch pattern as `DispatchRouter`, applied to
+`run_model_batch` instead of `run_batch` — correctly picked local at
+every size when tested live against all three backends, matching the
+table above. One honest wrinkle: `calibrate()` takes a single real
+measurement per backend (matching `DispatchRouter`'s existing design),
+so it can catch first-call overhead (lazy model init, cuDNN algorithm
+search) that the separately-averaged benchmark scripts warm past — a
+real, worth-knowing difference between "the router's own live
+calibration" and "a clean benchmark script's numbers," not a bug in
+either.
+
+Pod created, tested against both the raw-matmul and model-forward
+endpoints, and deleted within minutes — confirmed via `list-pods`.
+
 ## Phase 4 (deferred, not blocking)
 
 - **Jetson Orin Nano backend**: the genuinely interesting fourth silicon

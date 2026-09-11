@@ -31,3 +31,15 @@ class Backend(ABC):
         simulated.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def run_model_batch(self, batch: int, seq_len: int):
+        """Milestone 1: actually runs a real transformer block's forward
+        pass (models/tiny_transformer.py - PyTorch's own
+        TransformerEncoderLayer, the real Vaswani et al. base config,
+        not a matmul stand-in) on `batch` sequences of length `seq_len`,
+        in ONE logical call. Returns (wall_seconds, output_tensor_or_none)
+        - same contract as run_batch, different (and more realistic)
+        workload.
+        """
+        raise NotImplementedError

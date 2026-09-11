@@ -14,6 +14,10 @@ from backends.base import Backend
 
 class RemoteHTTPBackend(Backend):
     def __init__(self, url: str):
+        assert url.endswith("/batch"), (
+            "expected a url ending in /batch (e.g. http://host:8080/batch) - "
+            "model_batch's endpoint is derived from it, not passed separately"
+        )
         self.url = url
         self.name = f"remote:{url}"
 
@@ -39,4 +43,19 @@ class RemoteHTTPBackend(Backend):
         # not the tensor itself (shipping a 4096x4096 float tensor back
         # over HTTP would make network cost dominate for reasons that have
         # nothing to do with the routing question this repo is testing).
+        return wall, None
+
+    def _post_model(self, batch: int, seq_len: int) -> float:
+        payload = json.dumps({"batch": batch, "seq_len": seq_len}).encode()
+        req = urllib.request.Request(
+            self.url.replace("/batch", "/model_batch"), data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "curl/8.7.1"},
+        )
+        start = time.perf_counter()
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            json.loads(resp.read())
+        return time.perf_counter() - start
+
+    def run_model_batch(self, batch: int, seq_len: int):
+        wall = self._post_model(batch, seq_len)
         return wall, None
