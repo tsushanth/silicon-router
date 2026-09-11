@@ -12,6 +12,24 @@ for what's actually being worked toward next, and
 [CONTRIBUTING.md](CONTRIBUTING.md) if you want to add a backend or a
 workload.
 
+## Contents
+
+1. [Local CPU vs MPS routing](#phase-1-done-local-cpu-vs-mps-routing)
+2. [Remote CUDA GPU as a third backend](#phase-2-done-remote-cuda-gpu-as-a-third-backend)
+3. [kforge-style kernel autotuning — a negative result](#phase-3-done-kforge-style-kernel-autotuning--a-negative-result)
+5. [Batched remote dispatch — the real crossover](#phase-5-done-batched-remote-dispatch--the-real-crossover)
+6. [A real pluggable router](#phase-6-done-a-real-pluggable-router-milestone-3)
+7. [A real model forward pass, not a matmul](#phase-7-done-a-real-model-forward-pass-not-a-matmul-milestone-1)
+4. [Jetson Orin Nano — the real fourth silicon type](#phase-4-resolved-jetson-orin-nano--the-real-fourth-silicon-type)
+   — **numbered 4 but appears last**: originally planned third, blocked
+   by connectivity + a missing driver wheel, resolved and revisited
+   after phases 5-7 were already done. Numbering reflects when each
+   phase was *conceived*, not the order it was *finished* — kept
+   chronological rather than renumbered, since silently reordering the
+   record would blur which phases blocked on real external problems
+   (this one) versus which just came next.
+4b. [Fused-op kernel benchmark](#phase-4b-not-attempted) (not attempted)
+
 ## Phase 1 (done): local CPU vs MPS routing
 
 `benchmarks/bench_local.py` times a matmul (the core op in every linear
@@ -329,17 +347,20 @@ not a bug or a rigged comparison.
 `RemoteHTTPBackend` pointed at `workers/batch_server.py` running on the
 Jetson over the LAN (the same generic HTTP mechanism as the RunPod
 backend — a same-network host is just another remote backend, no
-special-casing needed):
+special-casing needed). Reproducible via
+`benchmarks/bench_dispatch_three_way.py <jetson-url>` — run twice
+(minutes apart, results below are the second run) with consistent
+results both times:
 
 | count | local:cpu | local:mps | Jetson (LAN HTTP) | Winner |
 |---|---|---|---|---|
-| 1 | 236.8ms | 319.8ms | 309.5ms | local:cpu |
-| 8 | 589.1ms | 264.0ms | 844.0ms | local:mps |
-| 32 | 2104.2ms | 977.0ms | 3332.6ms | local:mps |
-| 128 | 8551.9ms | 3678.9ms | 13253.9ms | local:mps |
+| 1 | 90.4ms | 100.2ms | 234.6ms | local:cpu |
+| 8 | 536.7ms | 230.2ms | 851.4ms | local:mps |
+| 32 | 2001.3ms | 917.8ms | 3329.1ms | local:mps |
+| 128 | 8111.2ms | 3664.0ms | 13268.9ms | local:mps |
 
 **Jetson loses at every size here — a genuinely important, non-obvious
-result.** Its LAN-measured time (13253.9ms at count=128) is nearly
+result.** Its LAN-measured time (13268.9ms at count=128) is nearly
 identical to its own standalone number from earlier in this section
 (13268.3ms), confirming the network adds negligible overhead on a LAN —
 this is a pure compute-power gap, not a connectivity artifact. Orin's
@@ -347,9 +368,10 @@ GPU beating its own CPU by 8-9x (above) does **not** mean it beats a
 desktop-class GPU in absolute terms — those are different questions
 entirely, and it's a real trap to conflate "beats its own weaker
 sibling by a wide margin" with "wins the race." The Orin Nano is a
-small edge chip; M2 Pro's MPS is not. `dispatch()` confirmed this live:
-routed to `local:cpu` at count=1 and `local:mps` at count=128, matching
-the table, both executed for real (89.2ms and 3767.0ms measured).
+small edge chip; M2 Pro's MPS is not. `dispatch()` confirmed this live
+in the same script: routed to `local:cpu` at count=1 and `local:mps`
+at count=128, matching the table, both executed for real (75.2ms and
+3680.2ms measured on the reproduction run).
 
 This is the honest payoff of building a real interface instead of
 hardcoding a "GPU wins" assumption anywhere: adding a real fourth
@@ -374,17 +396,9 @@ python3 router/router.py 128 4096 4096 30          # include remote CUDA w/ 30ms
 python3 workers/batch_server.py 8080               # on the remote GPU
 python3 benchmarks/bench_batched_remote.py http://<host>:8080/batch   # from your client
 
-# the real router - calibrates for real, then actually dispatches:
-python3 - <<'PY'
-from backends.local import LocalBackend
-from backends.remote_http import RemoteHTTPBackend
-from router.dispatch_router import DispatchRouter
-
-r = DispatchRouter([LocalBackend("cpu"), LocalBackend("mps"), RemoteHTTPBackend("http://<host>:8080/batch")])
-r.calibrate(dim=4096, counts=[1, 8, 32, 128])
-decision, wall, result = r.dispatch(4096, 128)
-print(decision["backend"], wall)
-PY
+# the real router across all three backends (local CPU, local MPS, and a
+# remote/LAN GPU) - calibrates for real, then actually dispatches:
+python3 benchmarks/bench_dispatch_three_way.py http://<host>:8080/batch
 ```
 
 ## Testing and reproducing (Milestone 4)
