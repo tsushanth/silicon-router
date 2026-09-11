@@ -109,12 +109,15 @@ turned out to be stale by the time this was revisited, not permanent —
 worth remembering that "checked once, documented as blocked" isn't the
 same as "still true later."
 
-**Still open**: Jetson isn't yet registered in `DispatchRouter`
-alongside the Mac/remote-GPU backends in one combined live run — its
-connection is real but intermittently drops, which made a single
-session covering all three backends risky rather than impossible.
-Low-risk follow-up now that the actual hard blockers (wheel
-availability, numerical correctness) are resolved.
+**Done**: Jetson registered as a real third `Backend` in one live
+`DispatchRouter` session (see README's Phase 4 update). Result was
+genuinely non-obvious: Jetson lost at every size tested despite beating
+its own CPU by 8-9x — a small edge GPU beating its own weak ARM CPU by
+a wide margin doesn't mean it beats a desktop-class GPU in absolute
+terms. Confirms the whole point of the `Backend` abstraction: adding a
+real architecture doesn't just add "another fast option," it can
+change what the router actually decides, for reasons only real
+measurement surfaces.
 
 ## Milestone 4: Reproducibility and docs good enough for a stranger to trust
 

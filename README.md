@@ -324,12 +324,38 @@ CPU on generic OpenMP/oneDNN, not x86 with MKL, and that's a real,
 expected difference in BLAS optimization maturity between platforms,
 not a bug or a rigged comparison.
 
-**Still open**: this backend isn't yet registered in `DispatchRouter`
-alongside the Mac/remote-GPU backends in one live run (the Jetson's
-connection is real but intermittently drops, which made a single
-combined session risky rather than impossible) — a natural, low-risk
-follow-up now that the hard blockers (wheel availability, correctness)
-are resolved.
+**Update — done**: registered as a real third `Backend` in one live
+`DispatchRouter` session alongside `local:cpu` and `local:mps`, via
+`RemoteHTTPBackend` pointed at `workers/batch_server.py` running on the
+Jetson over the LAN (the same generic HTTP mechanism as the RunPod
+backend — a same-network host is just another remote backend, no
+special-casing needed):
+
+| count | local:cpu | local:mps | Jetson (LAN HTTP) | Winner |
+|---|---|---|---|---|
+| 1 | 236.8ms | 319.8ms | 309.5ms | local:cpu |
+| 8 | 589.1ms | 264.0ms | 844.0ms | local:mps |
+| 32 | 2104.2ms | 977.0ms | 3332.6ms | local:mps |
+| 128 | 8551.9ms | 3678.9ms | 13253.9ms | local:mps |
+
+**Jetson loses at every size here — a genuinely important, non-obvious
+result.** Its LAN-measured time (13253.9ms at count=128) is nearly
+identical to its own standalone number from earlier in this section
+(13268.3ms), confirming the network adds negligible overhead on a LAN —
+this is a pure compute-power gap, not a connectivity artifact. Orin's
+GPU beating its own CPU by 8-9x (above) does **not** mean it beats a
+desktop-class GPU in absolute terms — those are different questions
+entirely, and it's a real trap to conflate "beats its own weaker
+sibling by a wide margin" with "wins the race." The Orin Nano is a
+small edge chip; M2 Pro's MPS is not. `dispatch()` confirmed this live:
+routed to `local:cpu` at count=1 and `local:mps` at count=128, matching
+the table, both executed for real (89.2ms and 3767.0ms measured).
+
+This is the honest payoff of building a real interface instead of
+hardcoding a "GPU wins" assumption anywhere: adding a real fourth
+architecture didn't just slot in as "another fast option" — it revealed
+that per-workload absolute measurement matters more than which chip
+*sounds* more capable.
 
 ## Phase 4b (not attempted)
 
