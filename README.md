@@ -264,22 +264,75 @@ either.
 Pod created, tested against both the raw-matmul and model-forward
 endpoints, and deleted within minutes — confirmed via `list-pods`.
 
-## Phase 4 (deferred, not blocking)
+## Phase 4 (resolved): Jetson Orin Nano — the real fourth silicon type
 
-- **Jetson Orin Nano backend**: the genuinely interesting fourth silicon
-  type here — ARM CPU + Tegra iGPU with unified memory, architecturally
-  distinct from everything benchmarked above (unlike another RunPod/Vast
-  box, which would just be a different GPU tier on the same x86+discrete-
-  GPU architecture already covered in Phase 2). Deferred rather than
-  swapped for a same-architecture provider, because that would dilute
-  the actual multi-*silicon* claim this repo is making. Two real,
-  external blockers, neither fixable from code: the pod is WiFi-only
-  with no VPN/Tailscale set up, so it's only reachable when a laptop is
-  on the same LAN; and even when reachable, no NVIDIA Tegra-CUDA wheel
-  is published yet for its JetPack R39 / CUDA 13.2 build, so the Orin
-  GPU can't be exercised regardless of connectivity. Revisit once
-  Tailscale is installed on the device and/or NVIDIA ships a matching
-  wheel.
+This was deferred for two reasons, both eventually resolved rather than
+worked around: the device is WiFi-only with no VPN/Tailscale, so it's
+only reachable when on the same LAN; and no NVIDIA Tegra-CUDA wheel was
+published for its JetPack R39 / CUDA 13.2 build *at the time of Phase
+6* — checked directly against NVIDIA's Jetson package index, not
+assumed. That assumption turned out to be **wrong** by the time this was
+revisited: a generic `pip3 install torch` (2.14.0+cu130) now pulls real
+CUDA 13 packages that work on the Orin's iGPU. Worth stating plainly —
+the earlier "deferred, no wheel available" note was correct when
+written and stale by the time it mattered; checked again rather than
+trusted.
+
+**Correctness verified before trusting any speed number**: PyTorch
+itself warns this build has no kernels compiled for Orin's compute
+capability (8.7) and falls back to PTX JIT compilation. That's a real
+"did it silently produce garbage" risk, not paranoia — checked directly
+by comparing a CUDA matmul against the identical op on CPU: max
+absolute difference **5.0e-5**, consistent with ordinary float32
+accumulation-order variance between backends, not a correctness bug.
+
+**Real measured result — GPU wins at every size, on both workloads**,
+unlike Mac's MPS which lost badly at small sizes:
+
+Matmul (`backends/local.py`'s `LocalBackend("cuda")`, now genuinely
+usable for a local Tegra device, not just a discrete GPU):
+
+| Size class | CPU (ms) | CUDA/Orin (ms) | Speedup |
+|---|---|---|---|
+| tiny | 0.7 | 0.2 | 3.4x |
+| small | 24.2 | 2.8 | 8.5x |
+| medium | 527.4 | 60.7 | 8.7x |
+| large | 7562.6 | 861.8 | 8.8x |
+| xlarge | 115930.4 | 13268.3 | 8.7x |
+
+Real transformer block (same `TinyTransformerBlock` as Phase 7):
+
+| seq_len | CPU (ms) | CUDA/Orin (ms) | Speedup |
+|---|---|---|---|
+| 16 | 9.8 | 1.1 | 9.3x |
+| 64 | 28.3 | 2.0 | 13.9x |
+| 256 | 70.1 | 7.1 | 9.9x |
+| 1024 | 358.4 | 32.5 | 11.0x |
+
+**Why GPU wins even at tiny sizes here, when MPS didn't on Mac**: Orin's
+CPU and GPU share the same physical memory (true unified memory, not
+just a unified *address space* like Apple Silicon) — there's no
+PCIe-style transfer or the dispatch overhead that made MPS lose to CPU
+below Phase 1's crossover point. A genuinely different architecture
+produced a genuinely different routing story, which is the entire
+reason this project wanted a real fourth silicon type instead of
+another x86 GPU tier.
+
+Also worth being honest about: the CPU numbers here are much slower per
+element than the Mac's CPU numbers in Phase 1 — this is a 6-core ARM
+CPU on generic OpenMP/oneDNN, not x86 with MKL, and that's a real,
+expected difference in BLAS optimization maturity between platforms,
+not a bug or a rigged comparison.
+
+**Still open**: this backend isn't yet registered in `DispatchRouter`
+alongside the Mac/remote-GPU backends in one live run (the Jetson's
+connection is real but intermittently drops, which made a single
+combined session risky rather than impossible) — a natural, low-risk
+follow-up now that the hard blockers (wheel availability, correctness)
+are resolved.
+
+## Phase 4b (not attempted)
+
 - **Fused-op kernel benchmark**: retry the kforge experiment on a small
   chain of ops (e.g. matmul → bias-add → GELU) instead of one matmul,
   where kernel fusion actually has something to do.

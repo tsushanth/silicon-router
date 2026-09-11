@@ -1,0 +1,21 @@
+{
+  "device": "Jetson Orin Nano (Orin iGPU, JetPack R39, CUDA 13.2)",
+  "torch_version": "2.14.0+cu130",
+  "correctness_check": {
+    "max_abs_diff_cpu_vs_cuda_256x256_matmul": 5.0e-05,
+    "note": "PyTorch warns this build has no kernels compiled for Orin's compute capability (8.7) and falls back to PTX JIT. Diff is consistent with normal float32 accumulation-order variance, not a correctness bug."
+  },
+  "matmul_ms": {
+    "tiny":   {"cpu": 0.733,      "cuda": 0.219},
+    "small":  {"cpu": 24.195,     "cuda": 2.843},
+    "medium": {"cpu": 527.409,    "cuda": 60.742},
+    "large":  {"cpu": 7562.566,   "cuda": 861.847},
+    "xlarge": {"cpu": 115930.426, "cuda": 13268.319}
+  },
+  "transformer_block_ms": {
+    "16":   {"cpu": 9.813,   "cuda": 1.054},
+    "64":   {"cpu": 28.346,  "cuda": 2.036},
+    "256":  {"cpu": 70.120,  "cuda": 7.114},
+    "1024": {"cpu": 358.385, "cuda": 32.508}
+  }
+}

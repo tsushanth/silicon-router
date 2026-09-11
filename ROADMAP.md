@@ -99,11 +99,22 @@ community-cloud instances, same code. That's not noise to average
 away; it's why `calibrate()` is a first-class method instead of a
 one-time constant.
 
-**Still open**: Jetson remains the first real test of a *third*,
-architecturally distinct backend once it's reliably reachable (see
-README's Phase 4 note on why it's deferred, not faked) — the
-`Backend` interface is ready for it, nothing else needs to change to
-add it.
+**Update**: Jetson became reachable and is now that real third
+architecturally-distinct backend — see README's Phase 4. The `Backend`
+interface needed exactly one generalization (`LocalBackend` accepting
+`"cuda"` as a local device, not just `"cpu"`/`"mps"`) to support it, no
+new abstraction required. Also corrected an earlier wrong assumption in
+the process: the "no Tegra-CUDA wheel published" blocker from Phase 6
+turned out to be stale by the time this was revisited, not permanent —
+worth remembering that "checked once, documented as blocked" isn't the
+same as "still true later."
+
+**Still open**: Jetson isn't yet registered in `DispatchRouter`
+alongside the Mac/remote-GPU backends in one combined live run — its
+connection is real but intermittently drops, which made a single
+session covering all three backends risky rather than impossible.
+Low-risk follow-up now that the actual hard blockers (wheel
+availability, numerical correctness) are resolved.
 
 ## Milestone 4: Reproducibility and docs good enough for a stranger to trust
 

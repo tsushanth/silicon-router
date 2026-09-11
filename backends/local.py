@@ -1,7 +1,14 @@
-"""Local backend: CPU or MPS (Apple Silicon GPU), whatever torch reports
-available on this machine. Same math as benchmarks/bench_local.py, now
-behind the Backend interface so the router can call it directly instead
-of reading it back out of a results_*.json file.
+"""Local backend: CPU, MPS (Apple Silicon GPU), or CUDA - whatever torch
+reports available on THIS machine, no network hop. Same math as
+benchmarks/bench_local.py, now behind the Backend interface so the
+router can call it directly instead of reading it back out of a
+results_*.json file.
+
+"cuda" here means a local CUDA device, not a remote one - this is what
+makes Jetson's Orin iGPU usable through the same class as Mac's MPS,
+since both are "compute attached to the machine actually running this
+code," unlike backends/remote_http.py's genuinely remote GPU over a
+network round-trip.
 """
 import time
 
@@ -13,9 +20,11 @@ from models.tiny_transformer import TinyTransformerBlock, make_input
 
 class LocalBackend(Backend):
     def __init__(self, device: str):
-        assert device in ("cpu", "mps"), f"unsupported local device: {device}"
+        assert device in ("cpu", "mps", "cuda"), f"unsupported local device: {device}"
         if device == "mps":
             assert torch.backends.mps.is_available(), "MPS requested but not available"
+        if device == "cuda":
+            assert torch.cuda.is_available(), "CUDA requested but not available"
         self.device = device
         self.name = f"local:{device}"
         self._model = None
@@ -28,6 +37,8 @@ class LocalBackend(Backend):
     def _sync(self):
         if self.device == "mps":
             torch.mps.synchronize()
+        elif self.device == "cuda":
+            torch.cuda.synchronize()
 
     def benchmark_op(self, dim: int) -> float:
         wall, _ = self.run_batch(dim, 1)
