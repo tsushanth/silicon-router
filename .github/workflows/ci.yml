@@ -1,0 +1,73 @@
+# CI for silicon-router (ROADMAP.md Milestone 4: reproducibility a
+# stranger can trust without re-reading the whole repo).
+#
+# What this workflow DOES verify, unattended, on every push/PR:
+#   - The stdlib unittest suite in tests/ (router/router.py and
+#     router/dispatch_router.py's decision logic, via a fake Backend -
+#     no GPU/MPS needed for these).
+#   - torch actually imports on the runner (a real, if minimal, sanity
+#     check that the project's one real dependency isn't broken).
+#   - benchmarks/bench_local.py runs to completion on the runner's CPU
+#     and produces a results_local.json with real (if runner-specific)
+#     timings - i.e. the script itself is not broken, even though this
+#     runner's absolute numbers mean nothing.
+#
+# What this workflow explicitly CANNOT verify, and does not pretend to:
+#   - Standard GitHub-hosted runners have no GPU at all - no MPS (that
+#     needs Apple Silicon, i.e. real macOS hardware, which hosted
+#     runners aren't), no CUDA.
+#   - benchmarks/bench_cuda.py, benchmarks/bench_kforge.py (CUDA
+#     variant), benchmarks/bench_batched_remote.py, and anything that
+#     talks to workers/batch_server.py all require a real rented GPU
+#     (see README's Phase 2/3/5/6) and CANNOT be run here. They stay
+#     manually-reproduced-only, as documented in REPRODUCING.md - this
+#     workflow does not fake, skip-silently, or stub out those numbers.
+#   - The CPU-only run of bench_local.py on a GitHub runner will not
+#     reproduce this repo's own README numbers (those are from a
+#     specific M2 Pro) - it only proves the script runs and produces
+#     internally-consistent output, not that the numbers match.
+#
+# See REPRODUCING.md for exactly what "documented tolerance" means for
+# each phase's published numbers.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install torch (CPU-only wheel - this runner has no GPU)
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+
+      - name: Sanity-check torch actually imports
+        run: python3 -c "import torch; print('torch', torch.__version__, 'OK')"
+
+      - name: Run unit tests (tests/ - stdlib unittest, no extra deps)
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Run bench_local.py on the runner's CPU
+        # This runner has no MPS device, so bench_local.py's own
+        # torch.backends.mps.is_available() check will (correctly) skip
+        # the MPS half of the benchmark and only measure CPU - see
+        # benchmarks/bench_local.py's BACKENDS list. That's the script
+        # behaving correctly, not a gap in this workflow.
+        run: python3 benchmarks/bench_local.py
+
+      - name: Show what bench_local.py actually produced on this runner
+        run: cat benchmarks/results_local.json
+
+      - name: Discard the runner-specific results file
+        # This runner's numbers are real but not this repo's canonical
+        # ones (different, weaker, shared CI hardware) - don't let CI
+        # silently commit/leave behind a diff on results_local.json.
+        run: git checkout -- benchmarks/results_local.json || true

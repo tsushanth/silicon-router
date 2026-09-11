@@ -247,3 +247,20 @@ decision, wall, result = r.dispatch(4096, 128)
 print(decision["backend"], wall)
 PY
 ```
+
+## Testing and reproducing (Milestone 4)
+
+```bash
+python3 -m unittest discover tests/ -v   # deterministic router/dispatch logic, no GPU needed
+```
+
+`tests/` covers the non-benchmark logic in `router/router.py` and
+`router/dispatch_router.py` (routing decisions, calibration
+bookkeeping) against fixed fixtures and a fake `Backend`, so it's fast
+and needs no hardware. `.github/workflows/ci.yml` runs these plus
+`benchmarks/bench_local.py` on every push/PR — CPU-only, since
+GitHub-hosted runners have no GPU. See
+[REPRODUCING.md](REPRODUCING.md) for exactly what "documented
+tolerance" means per phase before assuming a rerun that doesn't match
+the tables above is a bug — most of them aren't meant to reproduce
+exact millisecond figures, only the qualitative winner.

@@ -108,6 +108,37 @@ scale to "someone found this on GitHub."
   bar: real measured numbers or it doesn't get merged, positive or
   negative results both welcome.
 
+**Progress so far**:
+- `tests/` (plain stdlib `unittest`, zero extra deps): unit tests for
+  `router/router.py`'s deterministic decision logic
+  (`nearest_size_class`, `route()`) and `router/dispatch_router.py`'s
+  `DispatchRouter` (`calibrate()`/`route()`/`dispatch()` bookkeeping),
+  using a fake `Backend` subclass with synthetic timings instead of
+  real hardware — `backends/base.py`'s interface is exactly designed
+  for that substitution. 23 tests, no GPU/MPS/torch-device dependency,
+  verified passing locally.
+- `.github/workflows/ci.yml`: runs the above tests, a `torch` import
+  sanity check, and `benchmarks/bench_local.py` itself on the CI
+  runner's CPU, on every push/PR. Explicit in its own comments about
+  what it can't do — no GPU on standard GitHub-hosted runners, so
+  `bench_cuda.py`, the CUDA half of `bench_kforge.py`,
+  `bench_batched_remote.py`, and anything touching
+  `workers/batch_server.py` stay manually-reproduced only, not
+  CI-verified.
+- `REPRODUCING.md`: states, phase by phase, what "documented tolerance"
+  actually means — qualitative crossovers/winners are the reproducible
+  claim, exact millisecond figures and exact crossover points are
+  this-machine-and-this-rented-instance-specific (Phase 6's README
+  already documents the crossover moving from batch 32 to batch 64
+  between two different rented pods — REPRODUCING.md treats that as
+  the norm to expect, not an exception).
+
+**Still open**: CONTRIBUTING.md's "real measured numbers or it doesn't
+merge" bar is stated but not yet mechanically enforced (e.g. a PR
+template checklist or CI check that a PR touching `benchmarks/`
+actually includes/updates a `results_*.json`) — that's the remaining
+piece before this milestone is fully done.
+
 ## Explicitly not planned
 
 - Any production-readiness work (auth, multi-tenancy, SLAs) — out of
