@@ -162,6 +162,48 @@ decisively, on this hardware pair.**
 The GPU pod was created, benchmarked, and deleted within minutes for
 this test — confirmed via a follow-up `list-pods` call, no idle billing.
 
+## Phase 6 (done): a real pluggable router (Milestone 3)
+
+Everything above was a benchmark script that prints a table. This phase
+turns it into something that actually routes: `backends/base.py` defines
+a two-method interface (`benchmark_op`, `run_batch`) that any backend —
+local CPU/MPS (`backends/local.py`), or a remote GPU over real HTTP
+(`backends/remote_http.py`) — implements identically, and
+`router/dispatch_router.py`'s `DispatchRouter` calibrates all of them at
+once, picks the fastest for a given `(dim, count)`, and **actually
+executes the real work** on it via `dispatch()` — not just reports a
+decision.
+
+Ran a full live integration test — CPU, MPS, and a real rented RTX 3090
+over its public HTTP proxy, all three registered with one router:
+
+```
+count=   1 -> local:cpu    (84.3ms)
+count=   8 -> local:mps    (229.1ms)
+count=  16 -> local:mps    (467.4ms)
+count=  32 -> local:mps    (915.4ms)
+count=  64 -> remote       (832.1ms)   [local:mps was 1859.4ms]
+count= 128 -> remote       (1176.3ms)  [local:mps was 3829.6ms]
+```
+
+`dispatch(4096, 128)` genuinely ran on the remote backend (1.7s real
+wall time, no tensor shipped back — see `remote_http.py`'s note on why);
+`dispatch(4096, 1)` genuinely ran locally and returned a real computed
+4096×4096 tensor. Both confirmed by executing them, not by reading the
+routing decision.
+
+**Honest note on the crossover point**: this run's local/remote
+crossover landed at count=64, not count=32 like Phase 5's number. Same
+router, same code, different rented instance (a weaker, noisier
+community-cloud box this time). That's not a bug — it's confirmation of
+the actual thesis: **the crossover is real, but it's a property of the
+specific hardware pair you measure, not a constant this project can
+hardcode.** `DispatchRouter.calibrate()` exists specifically so nobody
+has to trust last week's number for today's hardware.
+
+Pod created, integration-tested, and deleted within minutes — confirmed
+via `list-pods`.
+
 ## Phase 4 (deferred, not blocking)
 
 - **Jetson Orin Nano backend**: the genuinely interesting fourth silicon
@@ -192,4 +234,16 @@ python3 router/router.py 128 4096 4096 30          # include remote CUDA w/ 30ms
 # batched-remote crossover (needs a running batch_server.py on a GPU host):
 python3 workers/batch_server.py 8080               # on the remote GPU
 python3 benchmarks/bench_batched_remote.py http://<host>:8080/batch   # from your client
+
+# the real router - calibrates for real, then actually dispatches:
+python3 - <<'PY'
+from backends.local import LocalBackend
+from backends.remote_http import RemoteHTTPBackend
+from router.dispatch_router import DispatchRouter
+
+r = DispatchRouter([LocalBackend("cpu"), LocalBackend("mps"), RemoteHTTPBackend("http://<host>:8080/batch")])
+r.calibrate(dim=4096, counts=[1, 8, 32, 128])
+decision, wall, result = r.dispatch(4096, 128)
+print(decision["backend"], wall)
+PY
 ```

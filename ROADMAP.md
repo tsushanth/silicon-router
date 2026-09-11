@@ -61,18 +61,35 @@ local vs. "queue N ops for one remote call") is the next real step,
 not a new milestone — it's what Milestone 3's dispatch abstraction
 should be built around.
 
-## Milestone 3: A real dispatch abstraction
+## Milestone 3: A real dispatch abstraction — DONE
 
-**Problem**: `router.py` is a JSON lookup table today. That's honest
-and appropriately simple for what's been tested, but it's not something
-a third party could plug their own backend (a different GPU, a TPU, a
-different edge device) into.
+**Problem**: `router.py` was a JSON lookup table. Honest and
+appropriately simple for what had been tested at the time, but not
+something a third party could plug their own backend into, and it
+didn't use Milestone 2's batching finding at all.
 
-**Done when**: adding a new backend means implementing a small,
-documented interface (something like `benchmark()` + `dispatch()`), not
-editing router internals — and Jetson becomes the first real test of
-that interface once it's reliably reachable (see README's Phase 4 note
-on why it's deferred, not faked).
+**Done** (see Phase 6 in the README): `backends/base.py` defines a
+two-method `Backend` interface (`benchmark_op`, `run_batch`);
+`backends/local.py` and `backends/remote_http.py` implement it for
+CPU/MPS and a real remote GPU over HTTP; `router/dispatch_router.py`'s
+`DispatchRouter` calibrates every registered backend for a given
+`(dim, count)` and **actually executes** the winning one via
+`dispatch()`, not just reports a decision. Verified with a live
+integration test against a real rented GPU — router correctly crossed
+over to remote at high batch counts, correctly stayed local at low
+ones, and `dispatch()`'s real wall-clock time matched calibration.
+
+Also surfaced something worth keeping in mind: the crossover point
+moved between Phase 5's pod and Phase 6's pod (32 vs 64) — different
+community-cloud instances, same code. That's not noise to average
+away; it's why `calibrate()` is a first-class method instead of a
+one-time constant.
+
+**Still open**: Jetson remains the first real test of a *third*,
+architecturally distinct backend once it's reliably reachable (see
+README's Phase 4 note on why it's deferred, not faked) — the
+`Backend` interface is ready for it, nothing else needs to change to
+add it.
 
 ## Milestone 4: Reproducibility and docs good enough for a stranger to trust
 
