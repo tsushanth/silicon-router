@@ -36,7 +36,7 @@ multi-stage speech pipeline), not just a single op — with the same
 measure-first discipline as Phase 1-3 (no simulated numbers, no
 retrofitted narrative).
 
-## Milestone 2: Answer the batching/segment-routing question
+## Milestone 2: Answer the batching/segment-routing question — DONE
 
 **Problem**: Phase 2 found that a single op is never worth a remote
 GPU dispatch once you count network round-trip. That's a real finding,
@@ -45,9 +45,21 @@ but it leaves the interesting question unanswered — does routing a
 technical core of whether "route to remote hardware" is ever a good
 idea for real workloads, and right now it's still a guess.
 
-**Done when**: there's a real measured answer, with the batch size (or
-range of sizes) where remote dispatch starts winning, backed by numbers
-the same way everything else in this repo is.
+**Answered** (see Phase 5 in the README): yes, and cleanly. Local wins
+through batch 16, remote wins from batch 32 onward — 2x at the
+crossover, widening to 3.5x by batch 256 — measured with a real HTTP
+server on the remote GPU, not an SSH exec. This is now the actual
+thesis of the project: routing decisions are batch-size-dependent, not
+a fixed "local vs remote" answer, and the crossover point is something
+you measure per hardware pair, not assume.
+
+**Still open, not yet done**: the router itself (`router/router.py`)
+doesn't use this yet — it still only knows about single-op local
+routing plus an opt-in manual network-overhead override. Wiring the
+Phase 5 batch-crossover data into an actual routing decision (pick
+local vs. "queue N ops for one remote call") is the next real step,
+not a new milestone — it's what Milestone 3's dispatch abstraction
+should be built around.
 
 ## Milestone 3: A real dispatch abstraction
 

@@ -122,6 +122,46 @@ into one kernel avoids the intermediate memory round-trips that eager
 mode pays for each op separately. A single isolated matmul has nothing
 to fuse. That's the natural next experiment, not attempted here.
 
+## Phase 5 (done): batched remote dispatch — the real crossover
+
+Phase 2 found that a *single* op never justifies a remote GPU call once
+network round-trip is counted. This directly tests the natural follow-up:
+does batching multiple ops into **one** remote call change that verdict?
+
+`workers/batch_server.py` is a real HTTP server on the rented GPU (not
+an SSH exec — genuine TCP/HTTP round-trip, through RunPod's actual
+public proxy). `benchmarks/bench_batched_remote.py` sends it increasing
+batch sizes of the same 4096×4096 matmul, and compares total wall-clock
+time against running that many matmuls locally on MPS — no network at
+all, so its cost scales with pure compute.
+
+**Real measured result** (RTX 3090, MPS on M2 Pro, live over the public
+internet):
+
+| Batch size | Remote wall (ms) | — compute / network | Local wall (ms) | Winner |
+|---|---|---|---|---|
+| 1 | 283.6 | 5.7 / 277.9 | 186.0 | local |
+| 2 | 321.5 | 11.1 / 310.4 | 61.6 | local |
+| 4 | 304.7 | 22.2 / 282.5 | 123.9 | local |
+| 8 | 366.1 | 44.8 / 321.4 | 243.5 | local |
+| 16 | 564.3 | 93.2 / 471.1 | 464.4 | local (close) |
+| **32** | **473.5** | 188.8 / 284.7 | **929.8** | **remote (2x)** |
+| 64 | 692.1 | 385.7 / 306.4 | 1882.9 | remote (2.7x) |
+| 128 | 1270.8 | 770.5 / 500.4 | 3685.2 | remote (2.9x) |
+| 256 | 2121.1 | 1550.9 / 570.3 | 7524.0 | remote (3.5x) |
+
+**The crossover is real and clean, between batch 16 and 32.** Network
+overhead stays roughly flat (~280-570ms, noisy but bounded) regardless
+of batch size, while both compute times scale roughly linearly with
+batch size — so once amortized compute dominates the fixed network
+cost, remote wins, and the margin widens with batch size (up to 3.5x at
+256). This is exactly the mechanism Phase 2 predicted but didn't test:
+**a single op never justifies remote dispatch; ~32+ batched ops does,
+decisively, on this hardware pair.**
+
+The GPU pod was created, benchmarked, and deleted within minutes for
+this test — confirmed via a follow-up `list-pods` call, no idle billing.
+
 ## Phase 4 (deferred, not blocking)
 
 - **Jetson Orin Nano backend**: the genuinely interesting fourth silicon
@@ -138,9 +178,6 @@ to fuse. That's the natural next experiment, not attempted here.
   GPU can't be exercised regardless of connectivity. Revisit once
   Tailscale is installed on the device and/or NVIDIA ships a matching
   wheel.
-- **Batched remote dispatch**: route a whole *sequence* of ops to the
-  remote GPU per round-trip instead of one op at a time, and measure
-  whether that's actually where remote wins.
 - **Fused-op kernel benchmark**: retry the kforge experiment on a small
   chain of ops (e.g. matmul → bias-add → GELU) instead of one matmul,
   where kernel fusion actually has something to do.
@@ -151,4 +188,8 @@ to fuse. That's the natural next experiment, not attempted here.
 python3 benchmarks/bench_local.py                 # regenerate results_local.json on your own hardware
 python3 router/router.py 128 4096 4096             # local-only routing
 python3 router/router.py 128 4096 4096 30          # include remote CUDA w/ 30ms measured RTT
+
+# batched-remote crossover (needs a running batch_server.py on a GPU host):
+python3 workers/batch_server.py 8080               # on the remote GPU
+python3 benchmarks/bench_batched_remote.py http://<host>:8080/batch   # from your client
 ```
